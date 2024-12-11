@@ -382,23 +382,23 @@ const app = express();
 
 // Configuración CORS
 app.use(cors({
-  origin: '*',
+  origin: ['https://ia-coffee.web.app', 'https://ia-coffee.firebaseapp.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
+  credentials: false,
   optionsSuccessStatus: 200
 }));
+
+// Asegurar que las opciones CORS se aplican antes de las rutas
+app.options('*', cors());
 
 // Headers CORS adicionales
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   next();
+
 });
 
 // Middleware básico
