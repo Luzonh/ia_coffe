@@ -343,42 +343,37 @@ const handleSubmit = async () => {
   setLoading(true);
   setError(null);
 
+  const API_URL = 'https://cafe-disease-detector.onrender.com/detect';
+  console.log('URL del API:', API_URL); // Verificar la URL
+
   try {
     const currentUser = auth.currentUser;
     if (!currentUser) {
       throw new Error('Usuario no autenticado');
     }
 
-    console.log('Obteniendo token...');
     const token = await currentUser.getIdToken();
-    console.log('Token obtenido:', token.substring(0, 10) + '...');
+    console.log('Token generado correctamente');
 
     const formData = new FormData();
     formData.append('image', selectedFile);
-    console.log('FormData creado con archivo:', selectedFile.name);
+    console.log('Archivo adjunto:', selectedFile.name);
 
-    console.log('Iniciando fetch a:', 'https://cafe-disease-detector.onrender.com/detect');
-    const response = await fetch('https://cafe-disease-detector.onrender.com/detect', {
+    console.log('Iniciando petición a:', API_URL);
+    const response = await fetch(API_URL, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
-        // Removemos el Content-Type para que el navegador lo establezca automáticamente con el boundary correcto
+        'Authorization': `Bearer ${token}`
       },
       body: formData,
-      mode: 'cors',
-      credentials: 'omit' // Cambiamos a omit para evitar problemas de CORS con cookies
+      mode: 'cors'
     });
 
-    console.log('Respuesta recibida:', response.status, response.statusText);
-
     if (!response.ok) {
-      const errorData = await response.text(); // Usamos text() en lugar de json() para ver el error completo
-      console.error('Error response:', errorData);
-      throw new Error(errorData || 'Error al procesar la imagen');
+      throw new Error(`Error en la respuesta: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log('Datos recibidos:', data);
 
     if (data.success) {
       setResult(data);
@@ -388,11 +383,12 @@ const handleSubmit = async () => {
     }
   } catch (err) {
     console.error('Error completo:', err);
-    setError(err.message || 'Error en la comunicación con el servidor');
+    setError(err.message);
   } finally {
     setLoading(false);
   }
 };
+
   const handleReset = () => {
     setSelectedFile(null);
     setPreview(null);
