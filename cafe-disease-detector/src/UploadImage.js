@@ -298,7 +298,8 @@ const UploadImage = ({ user }) => {
       const response = await fetch('https://cafe-disease-detector.onrender.com/detect', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         },
         body: formData,
       });
