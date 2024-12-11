@@ -343,8 +343,8 @@ const handleSubmit = async () => {
   setLoading(true);
   setError(null);
 
-  const API_URL = 'https://cafe-disease-detector.onrender.com/detect';
-  console.log('URL del API:', API_URL); // Verificar la URL
+  // URL del API en variable de entorno o constante
+  const API_URL = process.env.REACT_APP_API_URL || 'https://cafe-disease-detector.onrender.com/detect';
 
   try {
     const currentUser = auth.currentUser;
@@ -353,28 +353,44 @@ const handleSubmit = async () => {
     }
 
     const token = await currentUser.getIdToken();
-    console.log('Token generado correctamente');
+
+    // Validar tamaño del archivo
+    if (selectedFile.size > 10 * 1024 * 1024) { // 10MB limit
+      throw new Error('El archivo es demasiado grande. El tamaño máximo es 10MB.');
+    }
 
     const formData = new FormData();
     formData.append('image', selectedFile);
-    console.log('Archivo adjunto:', selectedFile.name);
 
-    console.log('Iniciando petición a:', API_URL);
     const response = await fetch(API_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`
       },
       body: formData,
-      mode: 'cors'
+      mode: 'cors',
+      credentials: 'include'
     });
 
     if (!response.ok) {
-      throw new Error(`Error en la respuesta: ${response.status} ${response.statusText}`);
+      // Manejar diferentes tipos de errores HTTP
+      switch (response.status) {
+        case 413:
+          throw new Error('El archivo es demasiado grande');
+        case 415:
+          throw new Error('Tipo de archivo no soportado');
+        case 401:
+          throw new Error('No autorizado. Por favor, inicie sesión nuevamente');
+        case 403:
+          throw new Error('No tiene permiso para realizar esta acción');
+        default:
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Error del servidor: ${response.status}`);
+      }
     }
 
     const data = await response.json();
-
+    
     if (data.success) {
       setResult(data);
       setIsResultModalOpen(true);
@@ -382,12 +398,13 @@ const handleSubmit = async () => {
       setError(data.error || 'Error desconocido en el procesamiento');
     }
   } catch (err) {
-    console.error('Error completo:', err);
-    setError(err.message);
+    console.error('Error en el análisis:', err);
+    setError(err.message || 'Error de conexión. Por favor, intente nuevamente');
   } finally {
     setLoading(false);
   }
 };
+
 
   const handleReset = () => {
     setSelectedFile(null);
