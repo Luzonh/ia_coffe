@@ -368,11 +368,13 @@ const handleSubmit = async () => {
         'Authorization': `Bearer ${token}`
       },
       body: formData,
-      mode: 'cors',
-      credentials: 'include'
+      mode: 'cors'
     });
 
     if (!response.ok) {
+      if (response.status === 0) {
+        throw new Error('Error de conexión. Por favor, verifique su conexión a internet.');
+      }
       // Manejar diferentes tipos de errores HTTP
       switch (response.status) {
         case 413:
