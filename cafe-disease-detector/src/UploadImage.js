@@ -298,17 +298,22 @@ const UploadImage = ({ user }) => {
       const response = await fetch('https://cafe-disease-detector.onrender.com/detect', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${token}`
+          
         },
         body: formData,
+        mode: 'cors', // Asegurarse que estamos usando CORS
+        credentials: 'include' // Incluir credenciales si es necesario
       });
-  
+
+      if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Error al procesar la imagen');
+    }
+
       const data = await response.json();
   
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al procesar la imagen');
-      }
+      
   
       if (data.success) {
         setResult(data);
