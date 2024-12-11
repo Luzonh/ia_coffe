@@ -226,7 +226,9 @@ const ResultModal = ({ isOpen, onClose, result }) => {
               <div className="flex justify-center">
                 <div className="relative">
                   <img
+                    //src={`http://localhost:3001${result.imagePath}`}
                     src={`https://cafe-disease-detector.onrender.com${result.imagePath}`}
+                    
                     alt="Analyzed"
                     className="rounded-lg shadow-lg"
                     style={{ 
@@ -279,7 +281,7 @@ const UploadImage = ({ user }) => {
       setError(null);
     }
   };
-
+/*
   const handleSubmit = async () => {
     if (!selectedFile) return;
     setLoading(true);
@@ -296,6 +298,8 @@ const UploadImage = ({ user }) => {
       formData.append('image', selectedFile);
   
       const response = await fetch('https://cafe-disease-detector.onrender.com/detect', {
+      //const response = await fetch('http://localhost:3001/detect', {
+      
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -332,7 +336,63 @@ const UploadImage = ({ user }) => {
       setLoading(false);
     }
   };
+*/
 
+const handleSubmit = async () => {
+  if (!selectedFile) return;
+  setLoading(true);
+  setError(null);
+
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error('Usuario no autenticado');
+    }
+
+    console.log('Obteniendo token...');
+    const token = await currentUser.getIdToken();
+    console.log('Token obtenido:', token.substring(0, 10) + '...');
+
+    const formData = new FormData();
+    formData.append('image', selectedFile);
+    console.log('FormData creado con archivo:', selectedFile.name);
+
+    console.log('Iniciando fetch a:', 'https://cafe-disease-detector.onrender.com/detect');
+    const response = await fetch('https://cafe-disease-detector.onrender.com/detect', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        // Removemos el Content-Type para que el navegador lo establezca automáticamente con el boundary correcto
+      },
+      body: formData,
+      mode: 'cors',
+      credentials: 'omit' // Cambiamos a omit para evitar problemas de CORS con cookies
+    });
+
+    console.log('Respuesta recibida:', response.status, response.statusText);
+
+    if (!response.ok) {
+      const errorData = await response.text(); // Usamos text() en lugar de json() para ver el error completo
+      console.error('Error response:', errorData);
+      throw new Error(errorData || 'Error al procesar la imagen');
+    }
+
+    const data = await response.json();
+    console.log('Datos recibidos:', data);
+
+    if (data.success) {
+      setResult(data);
+      setIsResultModalOpen(true);
+    } else {
+      setError(data.error || 'Error desconocido en el procesamiento');
+    }
+  } catch (err) {
+    console.error('Error completo:', err);
+    setError(err.message || 'Error en la comunicación con el servidor');
+  } finally {
+    setLoading(false);
+  }
+};
   const handleReset = () => {
     setSelectedFile(null);
     setPreview(null);
