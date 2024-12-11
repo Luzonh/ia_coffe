@@ -34,7 +34,7 @@ const App = () => {
     formData.append('image', selectedFile);
 
     try {
-      const response = await fetch('http://localhost:3001/detect', {
+      const response = await fetch('https://cafe-disease-detector.onrender.com/detect', {
         method: 'POST',
         body: formData,
       });
