@@ -384,7 +384,13 @@ const app = express();
 app.use(cors({
   origin: ['https://ia-coffee.web.app', 'https://ia-coffee.firebaseapp.com'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization',
+    'Origin',
+    'Accept',
+    'X-Requested-With'
+  ],
   credentials: false,
   optionsSuccessStatus: 200
 }));
