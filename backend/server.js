@@ -380,28 +380,22 @@ admin.initializeApp({
 const app = express();
 
 // Configuración CORS
-app.use(cors({
-  origin: ['https://ia-coffee.web.app', 'https://ia-coffee.firebaseapp.com'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type', 
-    'Authorization',
-    'Origin',
-    'Accept',
-    'X-Requested-With'
-  ],
+const corsOptions = {
+  origin: 'https://ia-coffee.web.app',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With'],
   credentials: false,
   optionsSuccessStatus: 200
-}));
+};
 
 // Asegurar que las opciones CORS se aplican antes de las rutas
-//app.options('*', cors());
+app.use(cors(corsOptions));
 
 // Headers CORS adicionales
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://ia-coffee.web.app');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin, X-Requested-With');
   res.header('Access-Control-Allow-Credentials', 'false');
 
   if (req.method === 'OPTIONS') {
