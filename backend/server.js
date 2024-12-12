@@ -391,18 +391,21 @@ app.use(cors({
     'Accept',
     'X-Requested-With'
   ],
-  credentials: true,
-  maxAge: 86400 // 24 horas
+  credentials: false,
+  //maxAge: 86400 // 24 horas
 }));
 
 // Asegurar que las opciones CORS se aplican antes de las rutas
-app.options('*', cors());
+//app.options('*', cors());
 
 // Headers CORS adicionales
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Origin', 'https://ia-coffee.web.app');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
   next();
 
 });
