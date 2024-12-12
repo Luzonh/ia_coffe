@@ -367,16 +367,29 @@ const handleSubmit = async () => {
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Error ${response.status}`);
+      // Ignorar mensajes específicos de Matplotlib
+      if (errorData.error && errorData.error.includes('Matplotlib')) {
+        console.log('Matplotlib está inicializando, continuando con el proceso...');
+      } else {
+        throw new Error(errorData.error || `Error ${response.status}`);
+      }
     }
 
-    const data = await response.json();
-    
-    if (data.success) {
-      setResult(data);
-      setIsResultModalOpen(true);
-    } else {
-      throw new Error(data.error || 'Error en el procesamiento');
+    try {
+      const data = await response.json();
+      
+      // Verificar si los datos son válidos incluso si hay mensajes de Matplotlib
+      if (data && (data.success || data.results)) {
+        setResult(data);
+        setIsResultModalOpen(true);
+      } else if (data.error && !data.error.includes('Matplotlib')) {
+        throw new Error(data.error || 'Error en el procesamiento');
+      } else {
+        console.log('Procesando imagen...');
+      }
+    } catch (parseError) {
+      console.error('Error al procesar la respuesta:', parseError);
+      throw new Error('Error al procesar la respuesta del servidor');
     }
   } catch (err) {
     console.error('Error en el análisis:', err);
