@@ -360,11 +360,10 @@ const handleSubmit = async () => {
       },
       body: formData,
       mode: 'cors',
-      credentials: 'include' // Agregar esta línea
+      credentials: 'omit' // Agregar esta línea
     });
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Error en el procesamiento de la imagen');
+      throw new Error(`Error: ${response.status}`);
     }
 
     const data = await response.json();
