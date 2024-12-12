@@ -353,9 +353,12 @@ const fs = require('fs');
 const admin = require('firebase-admin');
 const axios = require('axios');
 const downloadModel = require('./modelDownloader');
+const os = require('os');
 
 // Agregar al inicio de tu server.js, después de los requires
 process.env.MPLCONFIGDIR = '/tmp/matplotlib';
+
+
 
 // Firebase Admin SDK Configuration
 try {
@@ -650,11 +653,19 @@ app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req
     pythonProcess.stdout.on('data', (data) => {
       result += data.toString();
       console.log('Python output:', data.toString());
+      console.log('Python output:', output);
+  if (!output.includes('building the font cache')) {
+    result += output;
+  }
     });
 
     pythonProcess.stderr.on('data', (data) => {
-      error += data.toString();
-      console.error('Python error:', data.toString());
+      const errorOutput = data.toString();
+  console.error('Python error:', errorOutput);
+  if (!errorOutput.includes('building the font cache') && 
+      !errorOutput.includes('Ultralytics')) {
+    error += errorOutput;
+  }
     });
 
     pythonProcess.on('close', async (code) => {
@@ -741,13 +752,14 @@ const initServer = async () => {
   }
 };
 
-// Configuración de Matplotlib
-const os = require('os');
-const tmpDir = path.join(os.tmpdir(), 'matplotlib');
-if (!fs.existsSync(tmpDir)) {
-    fs.mkdirSync(tmpDir, { recursive: true });
-}
+// Crear un directorio temporal para Matplotlib
+const tmpDir = path.join(os.tmpdir(), 'matplotlib-cache');
+fs.mkdirSync(tmpDir, { recursive: true });
 process.env.MPLCONFIGDIR = tmpDir;
+
+// También configurar el directorio para Ultralytics
+process.env.YOLO_CONFIG_DIR = tmpDir;
+
 
 // Iniciar el servidor
 initServer();
