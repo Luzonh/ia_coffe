@@ -384,11 +384,18 @@ const app = express();
 
 // Configuración CORS
 const corsOptions = {
-  origin: 'https://ia-coffee.web.app',
+  origin: ['https://ia-coffee.web.app', 'https://ia-coffee.firebaseapp.com'],
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With'],
-  credentials: false,
-  optionsSuccessStatus: 200
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'Origin', 
+    'X-Requested-With',
+    'Accept'
+  ],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 };
 
 // Asegurar que las opciones CORS se aplican antes de las rutas
@@ -398,11 +405,11 @@ app.use(cors(corsOptions));
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://ia-coffee.web.app');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin, X-Requested-With');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin, X-Requested-With, Accept');
   res.header('Access-Control-Allow-Credentials', 'false');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.status(204).end();
   }
   next();
 
@@ -588,7 +595,13 @@ app.use('/results', express.static(resultsDir));
 app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req, res) => {
   // Establecer headers CORS específicos para esta ruta
   res.header('Access-Control-Allow-Origin', 'https://ia-coffee.web.app');
-  res.header('Access-Control-Allow-Credentials', 'false');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
 
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
