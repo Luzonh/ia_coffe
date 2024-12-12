@@ -741,5 +741,13 @@ const initServer = async () => {
   }
 };
 
+// Configuración de Matplotlib
+const os = require('os');
+const tmpDir = path.join(os.tmpdir(), 'matplotlib');
+if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir, { recursive: true });
+}
+process.env.MPLCONFIGDIR = tmpDir;
+
 // Iniciar el servidor
 initServer();
