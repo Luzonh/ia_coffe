@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "build": "pip install matplotlib pillow numpy ultralytics"
   },
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.21.0",
