@@ -391,8 +391,8 @@ app.use(cors({
     'Accept',
     'X-Requested-With'
   ],
-  credentials: false,
-  optionsSuccessStatus: 200
+  credentials: true,
+  maxAge: 86400 // 24 horas
 }));
 
 // Asegurar que las opciones CORS se aplican antes de las rutas
