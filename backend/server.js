@@ -354,6 +354,9 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 const downloadModel = require('./modelDownloader');
 
+// Agregar al inicio de tu server.js, después de los requires
+process.env.MPLCONFIGDIR = '/tmp/matplotlib';
+
 // Firebase Admin SDK Configuration
 try {
   const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT ? 
