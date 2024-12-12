@@ -355,60 +355,63 @@ const axios = require('axios');
 const downloadModel = require('./modelDownloader');
 
 // Firebase Admin SDK Configuration
-try {
-  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT ? 
-  JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) : 
-  require('./model/ia-coffee-firebase-adminsdk-q1d9k-4f2ffee.json');
+const initializeFirebase = () => {
+  try {
+    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT ? 
+      JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) : 
+      require('./model/ia-coffee-firebase-adminsdk-q1d9k-4f2ffee.json');
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET
-});
-} catch (error) {
-  console.error('Error al inicializar Firebase Admin:', error);
-  // Si hay un error al cargar el archivo, intentamos usar las variables de entorno
-  const serviceAccountFromEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (serviceAccountFromEnv) {
     admin.initializeApp({
-      credential: admin.credential.cert(JSON.parse(serviceAccountFromEnv)),
+      credential: admin.credential.cert(serviceAccount),
       storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'ia-coffee.appspot.com'
     });
-  } else {
-    console.error('No se pudo inicializar Firebase Admin');
+  } catch (error) {
+    console.error('Error al inicializar Firebase Admin:', error);
+    // Intento de recuperación usando variables de entorno
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      admin.initializeApp({
+        credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)),
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'ia-coffee.appspot.com'
+      });
+    } else {
+      throw new Error('No se pudo inicializar Firebase Admin');
+    }
   }
-}
+};
+
+// Inicializar Firebase
+initializeFirebase();
 
 const app = express();
 
-// Configuración CORS
-app.use(cors({
-  origin: ['https://ia-coffee.web.app', 'https://ia-coffee.firebaseapp.com'],
+// Configuración CORS mejorada
+const corsOptions = {
+  origin: [
+    'https://ia-coffee.web.app',
+    'https://ia-coffee.firebaseapp.com',
+    // Agregar aquí otros dominios permitidos si es necesario
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
-    'Content-Type', 
+    'Content-Type',
     'Authorization',
     'Origin',
     'Accept',
     'X-Requested-With'
   ],
   credentials: true,
-  maxAge: 86400 // 24 horas
-}));
+  maxAge: 86400, // 24 horas
+  optionsSuccessStatus: 200
+};
 
-// Asegurar que las opciones CORS se aplican antes de las rutas
-app.options('*', cors());
+app.use(cors(corsOptions));
 
-// Headers CORS adicionales
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  next();
-
-});
+// Middleware para manejar preflight requests
+app.options('*', cors(corsOptions));
 
 // Middleware básico
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Inicializar servicios de Firebase
 const firestore = admin.firestore();
@@ -428,14 +431,18 @@ const modelDir = path.join(baseDir, 'model');
   }
 });
 
-// Middleware de autenticación
+// Middleware de autenticación mejorado
 async function authenticateUser(req, res, next) {
   try {
-    const idToken = req.headers.authorization?.split('Bearer ')[1];
-    if (!idToken) {
-      return res.status(403).json({ error: 'No token provided' });
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ 
+        error: 'Unauthorized',
+        message: 'No authentication token provided'
+      });
     }
 
+    const idToken = authHeader.split('Bearer ')[1];
     try {
       const decodedToken = await auth.verifyIdToken(idToken);
       req.user = {
@@ -446,25 +453,33 @@ async function authenticateUser(req, res, next) {
       next();
     } catch (verifyError) {
       console.error('Token verification error:', verifyError);
-      return res.status(403).json({ error: 'Invalid token' });
+      return res.status(403).json({ 
+        error: 'Forbidden',
+        message: 'Invalid authentication token'
+      });
     }
   } catch (error) {
-    console.error('Auth Error:', error);
-    return res.status(403).json({ error: 'Authentication failed' });
+    console.error('Authentication error:', error);
+    return res.status(500).json({ 
+      error: 'Server Error',
+      message: 'Error during authentication process'
+    });
   }
 }
 
+// Rangos de temperatura para enfermedades
+const TEMPERATURE_RANGES = {
+  'roya': '20-25°C',
+  'ojo de gallo': '18-22°C',
+  'minador': '22-28°C'
+};
+
 // Función para obtener temperatura basada en la enfermedad
 async function getTemperatureForDisease(disease) {
-  const temperatureRanges = {
-    'roya': '20-25°C',
-    'ojo de gallo': '18-22°C',
-    'minador': '22-28°C'
-  };
-  return temperatureRanges[disease] || null;
+  return TEMPERATURE_RANGES[disease.toLowerCase()] || null;
 }
 
-// Servicio de localización
+// Servicio de localización mejorado
 async function getCurrentLocation() {
   try {
     const response = await axios.get('https://ipapi.co/json/');
@@ -472,27 +487,30 @@ async function getCurrentLocation() {
       latitude: response.data.latitude,
       longitude: response.data.longitude,
       city: response.data.city,
-      country: response.data.country
+      country: response.data.country,
+      timestamp: new Date().toISOString()
     };
   } catch (error) {
     console.error('Error getting location:', error);
     return {
-      latitude: 0,
-      longitude: 0,
+      latitude: null,
+      longitude: null,
       city: 'Unknown',
-      country: 'Unknown'
+      country: 'Unknown',
+      timestamp: new Date().toISOString(),
+      error: 'Location service unavailable'
     };
   }
 }
 
-// Configuración de multer para subida de archivos
+// Configuración de multer mejorada
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
+  destination: (req, file, cb) => {
     cb(null, uploadsDir);
   },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+  filename: (req, file, cb) => {
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+    cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
   }
 });
 
@@ -501,26 +519,28 @@ const upload = multer({
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB máximo
   },
-  fileFilter: function(req, file, cb) {
+  fileFilter: (req, file, cb) => {
+    // Validar tipo de archivo
     if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/i)) {
-      return cb(new Error('Solo se permiten archivos de imagen.'));
+      return cb(new Error('Solo se permiten archivos de imagen (jpg, jpeg, png, gif)'));
     }
     cb(null, true);
   }
 });
 
-// Función para parsear detecciones del modelo
+// Función mejorada para parsear detecciones
 function parseDetections(result) {
   const detections = [];
   const lines = result.split('\n');
   
   for (const line of lines) {
     if (line.includes('ojo de gallo') || line.includes('roya') || line.includes('minador')) {
-      const matches = line.match(/(\d+)\s+(ojo de gallo|roya|minador)/);
+      const matches = line.match(/(\d+)\s+(ojo de gallo|roya|minador)/i);
       if (matches) {
         detections.push({
-          disease: matches[2],
-          count: parseInt(matches[1])
+          disease: matches[2].toLowerCase(),
+          count: parseInt(matches[1]),
+          timestamp: new Date().toISOString()
         });
       }
     }
@@ -529,7 +549,7 @@ function parseDetections(result) {
   return detections;
 }
 
-// Función para guardar datos de detección en Firebase
+// Función mejorada para guardar datos de detección
 async function saveDetectionData(user, detections, processedImagePath) {
   try {
     const timestamp = Date.now();
@@ -538,14 +558,17 @@ async function saveDetectionData(user, detections, processedImagePath) {
     const timeFormatter = currentDate.toTimeString().split(' ')[0];
 
     const detectionData = {
-      user: user.email || 'Correo Desconocido',
-      userName: user.name || 'Nombre Desconocido',
+      user: user.email,
+      userName: user.name,
+      userId: user.uid,
       detectedLabel: detections.length > 0 ? detections[0].disease : null,
       temperature: detections.length > 0 ? await getTemperatureForDisease(detections[0].disease) : null,
       location: await getCurrentLocation(),
       date: dateFormatter,
       time: timeFormatter,
-      detections: detections
+      timestamp: currentDate.toISOString(),
+      detections: detections,
+      processingStatus: 'completed'
     };
 
     if (processedImagePath) {
@@ -553,14 +576,17 @@ async function saveDetectionData(user, detections, processedImagePath) {
       await storageBucket.upload(processedImagePath, {
         destination: destination,
         metadata: {
-          contentType: 'image/jpeg'
+          contentType: 'image/jpeg',
+          metadata: {
+            firebaseStorageDownloadTokens: timestamp
+          }
         }
       });
 
       const [url] = await storageBucket.file(destination).getSignedUrl({
         version: 'v4',
         action: 'read',
-        expires: Date.now() + 7 * 24 * 60 * 60 * 1000 // URL válida por 7 días
+        expires: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 días
       });
 
       detectionData.imageUrl = url;
@@ -578,21 +604,26 @@ async function saveDetectionData(user, detections, processedImagePath) {
   }
 }
 
-// Servir archivos estáticos
+// Rutas estáticas
 app.use('/uploads', express.static(uploadsDir));
 app.use('/results', express.static(resultsDir));
 
-// Ruta de detección actualizada
-app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req, res) => {
+// Ruta de detección mejorada
+app.post('/detect', cors(corsOptions), authenticateUser, upload.single('image'), async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
+    return res.status(400).json({ 
+      error: 'Bad Request',
+      message: 'No file uploaded'
+    });
   }
 
+  let inputPath = null;
+  
   try {
     // Asegurarse de que el modelo esté disponible
     const modelPath = await downloadModel();
     
-    const inputPath = req.file.path;
+    inputPath = req.file.path;
     const timestamp = Date.now();
     const predictDir = path.join(resultsDir, 'predict');
     
@@ -604,9 +635,7 @@ app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req
     fs.readdirSync(resultsDir).forEach(folder => {
       if (folder.startsWith('predict') && folder !== 'predict') {
         const folderPath = path.join(resultsDir, folder);
-        if (fs.existsSync(folderPath)) {
-          fs.rmSync(folderPath, { recursive: true, force: true });
-        }
+        fs.rmSync(folderPath, { recursive: true, force: true });
       }
     });
 
@@ -639,21 +668,21 @@ app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req
     });
 
     pythonProcess.on('close', async (code) => {
-      // Limpiar archivo temporal del upload
-      if (fs.existsSync(inputPath)) {
+      // Limpiar archivo temporal
+      if (inputPath && fs.existsSync(inputPath)) {
         fs.unlinkSync(inputPath);
       }
 
       if (code !== 0) {
         return res.status(500).json({
           success: false,
-          error: error || 'Error processing image'
+          error: 'Processing Error',
+          message: error || 'Error processing image'
         });
       }
 
-      const detections = parseDetections(result);
-
       try {
+        const detections = parseDetections(result);
         const savedDetection = await saveDetectionData(
           req.user, 
           detections, 
@@ -673,34 +702,49 @@ app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req
         console.error('Save Error:', saveError);
         res.status(500).json({
           success: false,
-          error: 'Error saving detection data',
+          error: 'Database Error',
+          message: 'Error saving detection data',
           details: saveError.message
         });
       }
     });
   } catch (error) {
     console.error('Error in detection:', error);
-    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+    // Limpiar archivo temporal en caso de error
+    if (inputPath && fs.existsSync(inputPath)) {
+      fs.unlinkSync(inputPath);
     }
     res.status(500).json({
       success: false,
-      error: error.message
+      error: 'Server Error',
+      message: error.message
     });
   }
 });
 
-// Ruta de prueba
-app.get('/test', (req, res) => {
-  res.json({ message: 'Server is running correctly' });
+// Ruta de estado del servidor
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Middleware de manejo de errores
+// Middleware de manejo de errores mejorado
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    error: 'Something went wrong!',
-    message: err.message
+  console.error('Server Error:', err);
+  
+  // Limpiar archivos temporales si existen
+  if (req.file && req.file.path) {
+    fs.unlink(req.file.path, (unlinkError) => {
+      if (unlinkError) console.error('Error cleaning up temporary file:', unlinkError);
+    });
+  }
+
+  res.status(err.status || 500).json({
+    error: err.name || 'Server Error',
+    message: err.message || 'An unexpected error occurred',
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 });
 
@@ -714,12 +758,23 @@ const initServer = async () => {
     const PORT = process.env.PORT || 3001;
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
+      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   } catch (error) {
     console.error('Error al inicializar el servidor:', error);
     process.exit(1);
   }
 };
+
+// Manejo de errores no capturados
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
 
 // Iniciar el servidor
 initServer();
