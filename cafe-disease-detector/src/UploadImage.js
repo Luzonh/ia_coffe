@@ -357,12 +357,14 @@ const handleSubmit = async () => {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
+        'Content-Type': 'multipart/form-data',
         'Origin': 'https://ia-coffee.web.app'
       },
       body: formData,
       mode: 'cors',
-      credentials: 'omit' // Agregar esta línea
+      credentials: 'same-origin'
     });
+    
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.error || `Error ${response.status}`);
