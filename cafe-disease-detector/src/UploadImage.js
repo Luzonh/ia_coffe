@@ -357,13 +357,15 @@ const handleSubmit = async () => {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
+        'Origin': 'https://ia-coffee.web.app'
       },
       body: formData,
       mode: 'cors',
       credentials: 'omit' // Agregar esta línea
     });
     if (!response.ok) {
-      throw new Error(`Error: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Error ${response.status}`);
     }
 
     const data = await response.json();
@@ -372,7 +374,7 @@ const handleSubmit = async () => {
       setResult(data);
       setIsResultModalOpen(true);
     } else {
-      setError(data.error || 'Error desconocido en el procesamiento');
+      throw new Error(data.error || 'Error en el procesamiento');
     }
   } catch (err) {
     console.error('Error en el análisis:', err);
