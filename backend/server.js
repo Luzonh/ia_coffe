@@ -362,15 +362,14 @@ try {
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'ia-coffee.appspot.com'
 });
 } catch (error) {
   console.error('Error al inicializar Firebase Admin:', error);
   // Si hay un error al cargar el archivo, intentamos usar las variables de entorno
-  const serviceAccountFromEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (serviceAccountFromEnv) {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     admin.initializeApp({
-      credential: admin.credential.cert(JSON.parse(serviceAccountFromEnv)),
+      credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)),
       storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'ia-coffee.appspot.com'
     });
   } else {
@@ -392,7 +391,7 @@ app.use(cors({
     'X-Requested-With'
   ],
   credentials: false,
-  //maxAge: 86400 // 24 horas
+  optionsSuccessStatus: 200
 }));
 
 // Asegurar que las opciones CORS se aplican antes de las rutas
@@ -401,8 +400,10 @@ app.use(cors({
 // Headers CORS adicionales
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://ia-coffee.web.app');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'false');
+
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -410,6 +411,7 @@ app.use((req, res, next) => {
 
 });
 
+app.use(cors(corsOptions));
 // Middleware básico
 app.use(express.json());
 
@@ -490,12 +492,12 @@ async function getCurrentLocation() {
 
 // Configuración de multer para subida de archivos
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
+  destination: (req, file, cb) => {
     cb(null, uploadsDir);
   },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+  filename: (req, file, cb) => {
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+    cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
   }
 });
 
@@ -504,7 +506,7 @@ const upload = multer({
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB máximo
   },
-  fileFilter: function(req, file, cb) {
+  fileFilter: (req, file, cb) => {
     if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/i)) {
       return cb(new Error('Solo se permiten archivos de imagen.'));
     }
@@ -587,6 +589,10 @@ app.use('/results', express.static(resultsDir));
 
 // Ruta de detección actualizada
 app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req, res) => {
+  // Establecer headers CORS específicos para esta ruta
+  res.header('Access-Control-Allow-Origin', 'https://ia-coffee.web.app');
+  res.header('Access-Control-Allow-Credentials', 'false');
+
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -654,9 +660,10 @@ app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req
         });
       }
 
-      const detections = parseDetections(result);
+      
 
       try {
+        const detections = parseDetections(result);
         const savedDetection = await saveDetectionData(
           req.user, 
           detections, 
