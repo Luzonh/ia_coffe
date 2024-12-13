@@ -13,7 +13,7 @@ import {
   X 
 } from 'lucide-react';
 import { auth } from './firebase';
-import environment from '../config/environment';
+import environment from './config/environment';
 
 // Componente ImagePreview
 const ImagePreview = ({ src, alt, className }) => {
