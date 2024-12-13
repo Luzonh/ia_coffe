@@ -394,29 +394,27 @@ admin.initializeApp({
 
 // Configuración CORS
 const corsOptions = {
-  origin: ['https://ia-coffee.web.app', 'https://ia-coffee.firebaseapp.com'],
+  origin: ['https://ia-coffee.web.app', 'https://ia-coffee.firebaseapp.com', 'http://localhost:3000'],
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
-    'Origin', 
-    'X-Requested-With',
-    'Accept'
-  ],
-  credentials: false,
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
   preflightContinue: false,
-  optionsSuccessStatus: 204
+  optionsSuccessStatus: 204,
+  maxAge: 3600
 };
 
-// Asegurar que las opciones CORS se aplican antes de las rutas
 app.use(cors(corsOptions));
+
+// Middleware para manejar preflight requests
+app.options('*', cors(corsOptions));
 
 // Headers CORS adicionales
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://ia-coffee.web.app');
+  res.header('Access-Control-Allow-Origin', req.headers.origin);
+  res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin, X-Requested-With, Accept');
-  res.header('Access-Control-Allow-Credentials', 'false');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+ 
 
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
