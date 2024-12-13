@@ -359,6 +359,13 @@ const os = require('os');
 process.env.MPLCONFIGDIR = '/tmp/matplotlib';
 
 
+// Crear un directorio temporal para Matplotlib
+const tmpDir = path.join(os.tmpdir(), 'matplotlib-cache');
+fs.mkdirSync(tmpDir, { recursive: true });
+process.env.MPLCONFIGDIR = tmpDir;
+
+// También configurar el directorio para Ultralytics
+process.env.YOLO_CONFIG_DIR = tmpDir;
 
 // Firebase Admin SDK Configuration
 try {
@@ -521,23 +528,28 @@ const upload = multer({
   }
 });
 
-// Función para parsear detecciones del modelo
+// Modificar la función parseDetections para ser más robusta
 function parseDetections(result) {
   const detections = [];
-  const lines = result.split('\n');
-  
-  for (const line of lines) {
-    if (line.includes('ojo de gallo') || line.includes('roya') || line.includes('minador')) {
-      const matches = line.match(/(\d+)\s+(ojo de gallo|roya|minador)/);
-      if (matches) {
-        detections.push({
-          disease: matches[2],
-          count: parseInt(matches[1])
-        });
+  if (!result) return detections;
+
+  try {
+    const lines = result.split('\n');
+    for (const line of lines) {
+      if (line.includes('ojo de gallo') || line.includes('roya') || line.includes('minador')) {
+        const matches = line.match(/(\d+)\s+(ojo de gallo|roya|minador)/);
+        if (matches) {
+          detections.push({
+            disease: matches[2],
+            count: parseInt(matches[1])
+          });
+        }
       }
     }
+  } catch (error) {
+    console.error('Error parsing detections:', error);
   }
-  
+
   return detections;
 }
 
@@ -638,7 +650,7 @@ app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req
     // Ejecutar el modelo de detección
     const pythonProcess = spawn('python', [
       path.join(baseDir, 'detect.py'),
-      '--model', modelPath,
+      '--model', path.join(baseDir, 'best.pt'),
       '--source', originalPath,
       '--project', resultsDir,
       '--name', 'predict',
@@ -651,49 +663,47 @@ app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req
     let error = '';
 
     pythonProcess.stdout.on('data', (data) => {
-      result += data.toString();
-      console.log('Python output:', data.toString());
+      const output = data.toString();
       console.log('Python output:', output);
-  if (!output.includes('building the font cache')) {
-    result += output;
-  }
+      if (!output.includes('building the font cache')) {
+        result += output;
+      }
     });
 
     pythonProcess.stderr.on('data', (data) => {
       const errorOutput = data.toString();
-  console.error('Python error:', errorOutput);
-  if (!errorOutput.includes('building the font cache') && 
-      !errorOutput.includes('Ultralytics')) {
-    error += errorOutput;
-  }
+      console.error('Python error:', errorOutput);
+      if (!errorOutput.includes('building the font cache') && 
+        !errorOutput.includes('Ultralytics')) {
+      error += errorOutput;
+      } 
     });
 
     pythonProcess.on('close', async (code) => {
-      // Limpiar archivo temporal del upload
-      if (fs.existsSync(inputPath)) {
-        fs.unlinkSync(inputPath);
-      }
-
-      if (code !== 0) {
-        return res.status(500).json({
-          success: false,
-          error: error || 'Error processing image'
-        });
-      }
-
-      
-
       try {
+        // Limpiar archivo temporal del upload
+        if (fs.existsSync(inputPath)) {
+          fs.unlinkSync(inputPath);
+        }
+  
+        if (code !== 0) {
+          return res.status(500).json({
+            success: false,
+            error: error || 'Error processing image'
+          });
+        }
+  
         const detections = parseDetections(result);
+  
         const savedDetection = await saveDetectionData(
           req.user, 
           detections, 
           originalPath
         );
-
+  
         res.json({
           success: true,
-          imagePath: `/results/predict/original.jpg?t=${timestamp}`,
+          imagePath: `/results/predict/original.jpg?t=${Date.now()}`,
           results: {
             detections: detections,
             detection: savedDetection,
@@ -709,6 +719,16 @@ app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req
         });
       }
     });
+    // Manejar errores del proceso de Python
+  pythonProcess.on('error', (err) => {
+    console.error('Python process error:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Error starting Python process'
+    });
+  });
+
+
   } catch (error) {
     console.error('Error in detection:', error);
     if (req.file && req.file.path && fs.existsSync(req.file.path)) {
@@ -752,13 +772,7 @@ const initServer = async () => {
   }
 };
 
-// Crear un directorio temporal para Matplotlib
-const tmpDir = path.join(os.tmpdir(), 'matplotlib-cache');
-fs.mkdirSync(tmpDir, { recursive: true });
-process.env.MPLCONFIGDIR = tmpDir;
 
-// También configurar el directorio para Ultralytics
-process.env.YOLO_CONFIG_DIR = tmpDir;
 
 
 // Iniciar el servidor
