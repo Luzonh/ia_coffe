@@ -466,56 +466,31 @@ const handleSubmit = async () => {
     const formData = new FormData();
     formData.append('image', selectedFile);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 segundos
-
+    // No usar AbortController para esta versión
     setStatus('uploading');
     setProgress(30);
 
-    try {
-      // Intento de preflight
-      await fetch('https://cafe-disease-detector.onrender.com/detect', {
-        method: 'OPTIONS',
-        headers: {
-          'Access-Control-Request-Method': 'POST',
-          'Access-Control-Request-Headers': 'authorization,content-type',
-          'Origin': window.location.origin
-        },
-      });
-    } catch (error) {
-      console.log('Preflight check error:', error);
-    }
+    // Hacer la petición sin signal del AbortController
+    const response = await fetch('https://cafe-disease-detector.onrender.com/detect', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData,
+      mode: 'cors',
+      credentials: 'include' // Cambiado de 'omit' a 'include'
+    });
 
-    setStatus('processing');
     setProgress(60);
 
-    const response = await fetchWithRetry(
-      'https://cafe-disease-detector.onrender.com/detect',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData,
-        mode: 'cors',
-        credentials: 'omit',
-        signal: controller.signal,
-      }
-    );
-
-    clearTimeout(timeoutId);
-
     if (!response.ok) {
-      throw new Error(
-        response.status === 0 
-          ? 'El servidor está ocupado. Por favor, espere unos momentos.' 
-          : `Error del servidor: ${response.status}`
-      );
+      const errorData = await response.json().catch(() => ({
+        error: `Error del servidor: ${response.status}`
+      }));
+      throw new Error(errorData.error || 'Error en la conexión con el servidor');
     }
 
-    setProgress(90);
     const data = await response.json();
-    
     if (data.success) {
       setResult(data);
       setIsResultModalOpen(true);
@@ -527,16 +502,12 @@ const handleSubmit = async () => {
 
   } catch (err) {
     console.error('Error en el análisis:', err);
-    
     let errorMessage = 'Error de conexión. Por favor, intente nuevamente';
     
-    if (err.name === 'AbortError') {
-      errorMessage = `La solicitud tomó demasiado tiempo (${retryCount} intentos). 
-                     El servidor puede estar ocupado (Render Free Tier). 
-                     Por favor, intente nuevamente en unos momentos.`;
-    } else if (err.message.includes('busy') || err.message.includes('ocupado')) {
-      errorMessage = `Servidor ocupado (Intento ${retryCount} de 3). 
-                     Por favor, espere unos momentos.`;
+    if (err.message.includes('NetworkError') || err.message.includes('Failed to fetch')) {
+      errorMessage = 'Error de conexión con el servidor. Por favor, espere unos momentos y vuelva a intentar.';
+    } else if (err.message.includes('aborted')) {
+      errorMessage = 'La operación fue cancelada. Por favor, intente nuevamente.';
     }
     
     setError(errorMessage);
@@ -548,16 +519,22 @@ const handleSubmit = async () => {
 
 // Componente de estado de carga actualizado
 const LoadingStatus = () => (
-  <div className="fixed top-4 right-4 bg-white py-2 px-4 rounded-full shadow-lg">
+  <div className="fixed top-4 right-4 bg-white py-2 px-4 rounded-full shadow-lg z-50">
     <div className="flex items-center space-x-2">
       <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
       <div className="flex flex-col">
         <span className="text-sm font-medium text-gray-600">
-          {status === 'starting' && 'Iniciando proceso...'}
-          {status === 'uploading' && 'Subiendo imagen...'}
-          {status === 'processing' && 'Procesando (puede tomar hasta 2 min)...'}
-          {status === 'waiting' && `Reintentando en unos momentos... (Intento ${retryCount}/3)`}
-          {status === 'attempting' && 'Intentando conectar con el servidor...'}
+          {status === 'starting' && 'Preparando análisis...'}
+          {status === 'uploading' && 'Subiendo imagen... (esto puede tardar)'}
+          {status === 'processing' && (
+            <span>
+              Procesando imagen...
+              <br />
+              <span className="text-xs text-gray-500">
+                El servidor gratuito puede tardar hasta 2 minutos
+              </span>
+            </span>
+          )}
         </span>
         {progress > 0 && (
           <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
