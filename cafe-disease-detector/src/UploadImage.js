@@ -357,40 +357,30 @@ const handleSubmit = async () => {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'multipart/form-data',
+        // No incluir Content-Type cuando se usa FormData
+        'Accept': 'application/json',
         'Origin': 'https://ia-coffee.web.app'
       },
       body: formData,
       mode: 'cors',
-      credentials: 'same-origin'
+      credentials: 'omit'
     });
-    
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      // Ignorar mensajes específicos de Matplotlib
-      if (errorData.error && errorData.error.includes('Matplotlib')) {
-        console.log('Matplotlib está inicializando, continuando con el proceso...');
-      } else {
-        throw new Error(errorData.error || `Error ${response.status}`);
-      }
+      const errorData = await response.json().catch(() => ({
+        error: `Error de servidor: ${response.status}`
+      }));
+      throw new Error(errorData.error || 'Error en la conexión');
     }
 
-    try {
-      const data = await response.json();
-      
-      // Verificar si los datos son válidos incluso si hay mensajes de Matplotlib
-      if (data && (data.success || data.results)) {
-        setResult(data);
-        setIsResultModalOpen(true);
-      } else if (data.error && !data.error.includes('Matplotlib')) {
-        throw new Error(data.error || 'Error en el procesamiento');
-      } else {
-        console.log('Procesando imagen...');
-      }
-    } catch (parseError) {
-      console.error('Error al procesar la respuesta:', parseError);
-      throw new Error('Error al procesar la respuesta del servidor');
+    const data = await response.json();
+    if (data.success) {
+      setResult(data);
+      setIsResultModalOpen(true);
+    } else {
+      throw new Error(data.error || 'Error en el procesamiento');
     }
+
   } catch (err) {
     console.error('Error en el análisis:', err);
     setError(err.message || 'Error de conexión. Por favor, intente nuevamente');
