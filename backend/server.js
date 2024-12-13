@@ -354,6 +354,7 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 const downloadModel = require('./modelDownloader');
 const os = require('os');
+const app = express();
 
 // Agregar al inicio de tu server.js, después de los requires
 process.env.MPLCONFIGDIR = '/tmp/matplotlib';
@@ -390,7 +391,6 @@ admin.initializeApp({
   }
 }
 
-const app = express();
 
 // Configuración CORS
 const corsOptions = {
@@ -403,7 +403,7 @@ const corsOptions = {
     'X-Requested-With',
     'Accept'
   ],
-  credentials: true,
+  credentials: false,
   preflightContinue: false,
   optionsSuccessStatus: 204
 };
@@ -607,7 +607,7 @@ app.use('/uploads', express.static(uploadsDir));
 app.use('/results', express.static(resultsDir));
 
 // Ruta de detección actualizada
-app.post('/detect', cors(), authenticateUser, upload.single('image'), async (req, res) => {
+app.post('/detect', async (req, res) => {
   // Establecer headers CORS específicos para esta ruta
   res.header('Access-Control-Allow-Origin', 'https://ia-coffee.web.app');
   res.header('Access-Control-Allow-Credentials', 'true');
