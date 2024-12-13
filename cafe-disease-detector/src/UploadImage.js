@@ -280,7 +280,7 @@ const UploadImage = ({ user }) => {
           const MAX_HEIGHT = 800;
           let width = img.width;
           let height = img.height;
-  
+    
           if (width > height) {
             if (width > MAX_WIDTH) {
               height *= MAX_WIDTH / width;
@@ -292,45 +292,79 @@ const UploadImage = ({ user }) => {
               height = MAX_HEIGHT;
             }
           }
-  
+    
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
+  
+          // Dibujar fondo blanco para mejorar calidad
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+          
+          // Dibujar imagen
           ctx.drawImage(img, 0, 0, width, height);
           
-          canvas.toBlob((blob) => {
-            resolve(new File([blob], file.name, {
-              type: 'image/jpeg',
-            }));
-          }, 'image/jpeg', 0.7);
+          // Calidad inicial
+          let quality = 0.7;
+          const maxSize = 5 * 1024 * 1024; // 5MB máximo para Render Free
+          
+          const compressAndCheck = (q) => {
+            canvas.toBlob((blob) => {
+              if (blob.size > maxSize && q > 0.1) {
+                // Si la imagen sigue siendo muy grande, reducir calidad
+                quality = q - 0.1;
+                compressAndCheck(quality);
+              } else {
+                const optimizedFile = new File([blob], file.name, {
+                  type: 'image/jpeg',
+                  lastModified: Date.now()
+                });
+                resolve(optimizedFile);
+              }
+            }, 'image/jpeg', q);
+          };
+  
+          // Iniciar proceso de compresión
+          compressAndCheck(quality);
         };
         img.src = e.target.result;
       };
       reader.readAsDataURL(file);
     });
   };
-  
-  const handleFileSelect = async (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      setLoading(true);
-      try {
-        const optimizedFile = await optimizeImage(file);
-        setSelectedFile(optimizedFile);
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setPreview(reader.result);
-          setLoading(false);
-        };
-        reader.readAsDataURL(optimizedFile);
-        setResult(null);
-        setError(null);
-      } catch (err) {
-        setError('Error al procesar la imagen');
+
+  // Función para manejar la selección de archivos
+const handleFileSelect = async (event) => {
+  const file = event.target.files[0];
+  if (file) {
+    setLoading(true);
+    try {
+      const optimizedFile = await optimizeImage(file);
+      setSelectedFile(optimizedFile);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreview(reader.result);
         setLoading(false);
+      };
+      reader.readAsDataURL(optimizedFile);
+      setResult(null);
+      setError(null);
+
+      // Mostrar información del tamaño en la consola
+      console.log('Tamaño original:', (file.size / 1024 / 1024).toFixed(2) + 'MB');
+      console.log('Tamaño optimizado:', (optimizedFile.size / 1024 / 1024).toFixed(2) + 'MB');
+      
+      // Mostrar advertencia si la imagen sigue siendo grande
+      if (optimizedFile.size > 4 * 1024 * 1024) {
+        setError('Advertencia: La imagen sigue siendo grande. Puede haber problemas al subirla.');
       }
+    } catch (err) {
+      setError('Error al procesar la imagen');
+      setLoading(false);
     }
-  };
+  }
+};
+
 /*
   const handleSubmit = async () => {
     if (!selectedFile) return;
@@ -467,7 +501,7 @@ const LoadingMessage = () => (
   <div className="absolute top-4 right-4 bg-white py-2 px-4 rounded-full shadow-lg flex items-center space-x-2">
     <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
     <span className="text-sm font-medium text-gray-600">
-      Procesando... (puede tomar hasta 30 segundos en Render Free Tier)
+      {loading ? 'Optimizando imagen...' : 'Procesando... (puede tomar hasta 30 segundos en Render Free Tier)'}
     </span>
   </div>
 );
