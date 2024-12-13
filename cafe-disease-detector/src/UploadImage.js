@@ -476,20 +476,17 @@ const handleSubmit = async () => {
         'Authorization': `Bearer ${token}`
       },
       body: formData,
-      mode: 'cors',
-      credentials: 'include'
+      credentials: 'include',
+      mode: 'cors'
     });
 
-    setProgress(60);
-
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({
-        error: `Error del servidor: ${response.status}`
-      }));
-      throw new Error(errorData.error || 'Error en la conexión con el servidor');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Error en el servidor');
     }
 
     const data = await response.json();
+    
     if (data.success) {
       setResult(data);
       setIsResultModalOpen(true);
@@ -501,16 +498,7 @@ const handleSubmit = async () => {
 
   } catch (err) {
     console.error('Error en el análisis:', err);
-    let errorMessage = 'Error de conexión. Por favor, intente nuevamente';
-    
-    if (err.message.includes('NetworkError') || err.message.includes('Failed to fetch')) {
-      errorMessage = `Error de conexión con el servidor (${environment.apiUrl}). 
-                     Por favor, espere unos momentos y vuelva a intentar.`;
-    } else if (err.message.includes('aborted')) {
-      errorMessage = 'La operación fue cancelada. Por favor, intente nuevamente.';
-    }
-    
-    setError(errorMessage);
+    setError('Error de conexión. Por favor, intente nuevamente');
     setStatus('error');
   } finally {
     setLoading(false);
