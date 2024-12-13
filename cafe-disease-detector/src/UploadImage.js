@@ -266,8 +266,34 @@ const UploadImage = ({ user }) => {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [status, setStatus] = useState('idle');
+  const [progress, setProgress] = useState(0);
   const [isResultModalOpen, setIsResultModalOpen] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
+  const fetchWithRetry = async (url, options, maxRetries = 3) => {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        setStatus('attempting');
+        setProgress((i + 1) * 30);
+        
+        const response = await fetch(url, options);
+        if (response.ok) return response;
+        
+        if (response.status === 429) { // Too Many Requests
+          throw new Error('Servidor ocupado. Reintentando...');
+        }
+      } catch (error) {
+        setRetryCount(i + 1);
+        if (i === maxRetries - 1) throw error;
+        
+        // Espera incremental entre reintentos
+        const waitTime = 5000 * (i + 1);
+        setStatus('waiting');
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+  };
 
   const optimizeImage = async (file) => {
     return new Promise((resolve) => {
@@ -424,15 +450,11 @@ const handleFileSelect = async (event) => {
 
 const handleSubmit = async () => {
   if (!selectedFile) return;
+  
   setLoading(true);
   setError(null);
-
-  // Verificar el tamaño del archivo (máximo 5MB para Render free tier)
-  if (selectedFile.size > 5 * 1024 * 1024) {
-    setError('La imagen no debe superar los 5MB. Por favor, seleccione una imagen más pequeña.');
-    setLoading(false);
-    return;
-  }
+  setStatus('starting');
+  setProgress(0);
 
   try {
     const currentUser = auth.currentUser;
@@ -444,11 +466,14 @@ const handleSubmit = async () => {
     const formData = new FormData();
     formData.append('image', selectedFile);
 
-    // Configurar timeout para la petición
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 45000); // 45  segundos de timeout
-    
+    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 segundos
+
+    setStatus('uploading');
+    setProgress(30);
+
     try {
+      // Intento de preflight
       await fetch('https://cafe-disease-detector.onrender.com/detect', {
         method: 'OPTIONS',
         headers: {
@@ -461,53 +486,91 @@ const handleSubmit = async () => {
       console.log('Preflight check error:', error);
     }
 
-    const response = await fetch('https://cafe-disease-detector.onrender.com/detect', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
-      body: formData,
-      mode: 'cors',
-      credentials: 'omit',
-      signal: controller.signal,
-      // Retry logic será manejado por el catch
-    });
+    setStatus('processing');
+    setProgress(60);
+
+    const response = await fetchWithRetry(
+      'https://cafe-disease-detector.onrender.com/detect',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData,
+        mode: 'cors',
+        credentials: 'omit',
+        signal: controller.signal,
+      }
+    );
 
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      if (response.status === 0) {
-        throw new Error('El servidor está ocupado. Por favor, espere unos momentos y vuelva a intentarlo. (Render Free Tier puede tener tiempos de respuesta más largos)');
-      }
-      if (response.status === 413) {
-        throw new Error('La imagen es demasiado grande. Por favor, seleccione una imagen más pequeña.');
-      }
-      
-      const errorData = await response.json().catch(() => ({
-        error: `Error del servidor: ${response.status}`
-      }));
-      throw new Error(errorData.error || 'Error en la conexión con el servidor');
+      throw new Error(
+        response.status === 0 
+          ? 'El servidor está ocupado. Por favor, espere unos momentos.' 
+          : `Error del servidor: ${response.status}`
+      );
     }
 
+    setProgress(90);
     const data = await response.json();
+    
     if (data.success) {
       setResult(data);
       setIsResultModalOpen(true);
+      setProgress(100);
+      setStatus('complete');
     } else {
       throw new Error(data.error || 'Error en el procesamiento de la imagen');
     }
 
   } catch (err) {
     console.error('Error en el análisis:', err);
+    
+    let errorMessage = 'Error de conexión. Por favor, intente nuevamente';
+    
     if (err.name === 'AbortError') {
-      setError('La solicitud tomó demasiado tiempo. El servidor puede estar ocupado (Render Free Tier). Por favor, intente nuevamente en unos momentos.');
-    } else {
-      setError(err.message || 'Error de conexión. Por favor, intente nuevamente');
+      errorMessage = `La solicitud tomó demasiado tiempo (${retryCount} intentos). 
+                     El servidor puede estar ocupado (Render Free Tier). 
+                     Por favor, intente nuevamente en unos momentos.`;
+    } else if (err.message.includes('busy') || err.message.includes('ocupado')) {
+      errorMessage = `Servidor ocupado (Intento ${retryCount} de 3). 
+                     Por favor, espere unos momentos.`;
     }
+    
+    setError(errorMessage);
+    setStatus('error');
   } finally {
     setLoading(false);
   }
 };
+
+// Componente de estado de carga actualizado
+const LoadingStatus = () => (
+  <div className="fixed top-4 right-4 bg-white py-2 px-4 rounded-full shadow-lg">
+    <div className="flex items-center space-x-2">
+      <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+      <div className="flex flex-col">
+        <span className="text-sm font-medium text-gray-600">
+          {status === 'starting' && 'Iniciando proceso...'}
+          {status === 'uploading' && 'Subiendo imagen...'}
+          {status === 'processing' && 'Procesando (puede tomar hasta 2 min)...'}
+          {status === 'waiting' && `Reintentando en unos momentos... (Intento ${retryCount}/3)`}
+          {status === 'attempting' && 'Intentando conectar con el servidor...'}
+        </span>
+        {progress > 0 && (
+          <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+            <div 
+              className="bg-blue-500 rounded-full h-1.5 transition-all duration-500"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+);
 
 // Componente de mensaje de carga actualizado
 const LoadingMessage = () => (
@@ -614,6 +677,7 @@ const LoadingMessage = () => (
                       <div className="flex items-center justify-center">
                         <Loader2 className="w-5 h-5 animate-spin mr-2" />
                         <span>Procesando...</span>
+                        {loading && <LoadingStatus />}
                       </div>
                     ) : (
                       <div className="flex items-center justify-center">
