@@ -447,6 +447,19 @@ const handleSubmit = async () => {
     // Configurar timeout para la petición
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos de timeout
+    
+    try {
+      await fetch('https://cafe-disease-detector.onrender.com/detect', {
+        method: 'OPTIONS',
+        headers: {
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Headers': 'authorization,content-type',
+          'Origin': window.location.origin
+        },
+      });
+    } catch (error) {
+      console.log('Preflight check error:', error);
+    }
 
     const response = await fetch('https://cafe-disease-detector.onrender.com/detect', {
       method: 'POST',
@@ -463,7 +476,7 @@ const handleSubmit = async () => {
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      if (response.status === 500) {
+      if (response.status === 0) {
         throw new Error('El servidor está ocupado. Por favor, espere unos momentos y vuelva a intentarlo. (Render Free Tier puede tener tiempos de respuesta más largos)');
       }
       if (response.status === 413) {
