@@ -13,6 +13,7 @@ import {
   X 
 } from 'lucide-react';
 import { auth } from './firebase';
+import environment from '../config/environment';
 
 // Componente ImagePreview
 const ImagePreview = ({ src, alt, className }) => {
@@ -466,19 +467,17 @@ const handleSubmit = async () => {
     const formData = new FormData();
     formData.append('image', selectedFile);
 
-    // No usar AbortController para esta versión
     setStatus('uploading');
     setProgress(30);
 
-    // Hacer la petición sin signal del AbortController
-    const response = await fetch('https://cafe-disease-detector.onrender.com/detect', {
+    const response = await fetch(`${environment.apiUrl}/detect`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`
       },
       body: formData,
       mode: 'cors',
-      credentials: 'include' // Cambiado de 'omit' a 'include'
+      credentials: 'include'
     });
 
     setProgress(60);
@@ -505,7 +504,8 @@ const handleSubmit = async () => {
     let errorMessage = 'Error de conexión. Por favor, intente nuevamente';
     
     if (err.message.includes('NetworkError') || err.message.includes('Failed to fetch')) {
-      errorMessage = 'Error de conexión con el servidor. Por favor, espere unos momentos y vuelva a intentar.';
+      errorMessage = `Error de conexión con el servidor (${environment.apiUrl}). 
+                     Por favor, espere unos momentos y vuelva a intentar.`;
     } else if (err.message.includes('aborted')) {
       errorMessage = 'La operación fue cancelada. Por favor, intente nuevamente.';
     }
@@ -516,6 +516,7 @@ const handleSubmit = async () => {
     setLoading(false);
   }
 };
+
 
 // Componente de estado de carga actualizado
 const LoadingStatus = () => (
