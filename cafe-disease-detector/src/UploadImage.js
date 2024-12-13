@@ -446,7 +446,7 @@ const handleSubmit = async () => {
 
     // Configurar timeout para la petición
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos de timeout
+    const timeoutId = setTimeout(() => controller.abort(), 45000); // 45  segundos de timeout
     
     try {
       await fetch('https://cafe-disease-detector.onrender.com/detect', {
