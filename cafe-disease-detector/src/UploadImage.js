@@ -268,17 +268,67 @@ const UploadImage = ({ user }) => {
   const [error, setError] = useState(null);
   const [isResultModalOpen, setIsResultModalOpen] = useState(false);
 
-  const handleFileSelect = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      setSelectedFile(file);
+
+  const optimizeImage = async (file) => {
+    return new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreview(reader.result);
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          const MAX_HEIGHT = 800;
+          let width = img.width;
+          let height = img.height;
+  
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+  
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob((blob) => {
+            resolve(new File([blob], file.name, {
+              type: 'image/jpeg',
+            }));
+          }, 'image/jpeg', 0.7);
+        };
+        img.src = e.target.result;
       };
       reader.readAsDataURL(file);
-      setResult(null);
-      setError(null);
+    });
+  };
+  
+  const handleFileSelect = async (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setLoading(true);
+      try {
+        const optimizedFile = await optimizeImage(file);
+        setSelectedFile(optimizedFile);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setPreview(reader.result);
+          setLoading(false);
+        };
+        reader.readAsDataURL(optimizedFile);
+        setResult(null);
+        setError(null);
+      } catch (err) {
+        setError('Error al procesar la imagen');
+        setLoading(false);
+      }
     }
   };
 /*
@@ -343,6 +393,13 @@ const handleSubmit = async () => {
   setLoading(true);
   setError(null);
 
+  // Verificar el tamaño del archivo (máximo 5MB para Render free tier)
+  if (selectedFile.size > 5 * 1024 * 1024) {
+    setError('La imagen no debe superar los 5MB. Por favor, seleccione una imagen más pequeña.');
+    setLoading(false);
+    return;
+  }
+
   try {
     const currentUser = auth.currentUser;
     if (!currentUser) {
@@ -353,24 +410,36 @@ const handleSubmit = async () => {
     const formData = new FormData();
     formData.append('image', selectedFile);
 
+    // Configurar timeout para la petición
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos de timeout
+
     const response = await fetch('https://cafe-disease-detector.onrender.com/detect', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
-        // No incluir Content-Type cuando se usa FormData
-        'Accept': 'application/json',
-        'Origin': 'https://ia-coffee.web.app'
+        'Authorization': `Bearer ${token}`
       },
       body: formData,
       mode: 'cors',
-      credentials: 'omit'
+      credentials: 'omit',
+      signal: controller.signal,
+      // Retry logic será manejado por el catch
     });
 
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
+      if (response.status === 500) {
+        throw new Error('El servidor está ocupado. Por favor, espere unos momentos y vuelva a intentarlo. (Render Free Tier puede tener tiempos de respuesta más largos)');
+      }
+      if (response.status === 413) {
+        throw new Error('La imagen es demasiado grande. Por favor, seleccione una imagen más pequeña.');
+      }
+      
       const errorData = await response.json().catch(() => ({
-        error: `Error de servidor: ${response.status}`
+        error: `Error del servidor: ${response.status}`
       }));
-      throw new Error(errorData.error || 'Error en la conexión');
+      throw new Error(errorData.error || 'Error en la conexión con el servidor');
     }
 
     const data = await response.json();
@@ -378,16 +447,30 @@ const handleSubmit = async () => {
       setResult(data);
       setIsResultModalOpen(true);
     } else {
-      throw new Error(data.error || 'Error en el procesamiento');
+      throw new Error(data.error || 'Error en el procesamiento de la imagen');
     }
 
   } catch (err) {
     console.error('Error en el análisis:', err);
-    setError(err.message || 'Error de conexión. Por favor, intente nuevamente');
+    if (err.name === 'AbortError') {
+      setError('La solicitud tomó demasiado tiempo. El servidor puede estar ocupado (Render Free Tier). Por favor, intente nuevamente en unos momentos.');
+    } else {
+      setError(err.message || 'Error de conexión. Por favor, intente nuevamente');
+    }
   } finally {
     setLoading(false);
   }
 };
+
+// Componente de mensaje de carga actualizado
+const LoadingMessage = () => (
+  <div className="absolute top-4 right-4 bg-white py-2 px-4 rounded-full shadow-lg flex items-center space-x-2">
+    <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+    <span className="text-sm font-medium text-gray-600">
+      Procesando... (puede tomar hasta 30 segundos en Render Free Tier)
+    </span>
+  </div>
+);
 
 
   const handleReset = () => {
