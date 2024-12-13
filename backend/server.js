@@ -398,9 +398,7 @@ const corsOptions = {
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
-  preflightContinue: false,
-  optionsSuccessStatus: 204,
-  maxAge: 3600
+  maxAge: 86400 // 24 horas
 };
 
 app.use(cors(corsOptions));
@@ -605,9 +603,9 @@ app.use('/uploads', express.static(uploadsDir));
 app.use('/results', express.static(resultsDir));
 
 // Ruta de detección actualizada
-app.post('/detect', async (req, res) => {
+app.post('/detect', upload.single('image'), async (req, res) => {
   // Establecer headers CORS específicos para esta ruta
-  res.header('Access-Control-Allow-Origin', 'https://ia-coffee.web.app');
+  res.header('Access-Control-Allow-Origin', req.headers.origin);
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Origin');
@@ -734,7 +732,7 @@ app.post('/detect', async (req, res) => {
     }
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Internal server error'
     });
   }
 });
