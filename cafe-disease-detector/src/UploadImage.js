@@ -516,73 +516,77 @@ const handleFileSelect = async (event) => {
   };
 */
 
-const handleSubmit = async () => { // Removemos el parámetro e
+const handleSubmit = async () => {
   if (!selectedFile || loading) return;
   
   setLoading(true);
   setError(null);
   setCurrentStatus('starting');
   setUploadProgress(0);
-  setAnalysisProgress(0);
 
   try {
-    console.log('Iniciando proceso de análisis...');
     const currentUser = auth.currentUser;
     if (!currentUser) {
       throw new Error('Usuario no autenticado');
     }
 
     const token = await currentUser.getIdToken();
-    if (!token) {
-      throw new Error('No se pudo obtener el token de autenticación');
-    }
-
     const formData = new FormData();
     formData.append('image', selectedFile);
 
     setCurrentStatus('uploading');
-    console.log('Subiendo imagen al servidor...');
-    setUploadProgress(30);
+    console.log('Intentando conexión al servidor...');
 
-    const apiUrl = `${environment.apiUrl}/detect`;
-    console.log('URL del servidor:', apiUrl);
-
-    const response = await fetch(apiUrl, { // Simplificamos la llamada fetch
+    const response = await fetch(`${environment.apiUrl}/detect`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json'
       },
       body: formData,
       credentials: 'include',
       mode: 'cors'
     });
 
+    // Manejo específico de errores HTTP
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      if (response.status === 500) {
+        throw new Error('Error interno del servidor. El servidor puede estar iniciándose, por favor espere unos minutos y vuelva a intentar.');
+      } else if (response.status === 413) {
+        throw new Error('La imagen es demasiado grande. Por favor, intente con una imagen más pequeña.');
+      } else {
+        const errorText = await response.text();
+        throw new Error(`Error del servidor: ${response.status} - ${errorText}`);
+      }
     }
 
     const data = await response.json();
-    console.log('Respuesta del servidor recibida:', data);
+    console.log('Respuesta recibida:', data);
 
     if (data.success) {
-      setCurrentStatus('complete');
       setResult(data);
       setIsResultModalOpen(true);
-      console.log('Análisis completado exitosamente');
+      setCurrentStatus('complete');
     } else {
       throw new Error(data.error || 'Error en el procesamiento de la imagen');
     }
 
   } catch (err) {
-    console.error('Error detallado:', err);
-    setCurrentStatus('error');
-    
-    let errorMessage = 'Error de conexión. Por favor, intente nuevamente';
-    if (err.message.includes('401')) {
+    console.error('Error en el análisis:', err);
+    let errorMessage;
+
+    if (err.message.includes('500')) {
+      errorMessage = 'El servidor está ocupado o iniciándose. Por favor espere unos minutos y vuelva a intentar.';
+    } else if (err.message.includes('413')) {
+      errorMessage = 'La imagen es demasiado grande. Intente con una imagen más pequeña.';
+    } else if (err.message.includes('401')) {
       errorMessage = 'Sesión expirada. Por favor, inicie sesión nuevamente.';
+    } else {
+      errorMessage = 'Error de conexión. Por favor, intente nuevamente en unos momentos.';
     }
     
     setError(errorMessage);
+    setCurrentStatus('error');
   } finally {
     setLoading(false);
   }
