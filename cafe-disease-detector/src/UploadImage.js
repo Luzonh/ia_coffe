@@ -516,8 +516,7 @@ const handleFileSelect = async (event) => {
   };
 */
 
-const handleSubmit = async (e) => {
-  if (e) e.preventDefault();
+const handleSubmit = async () => { // Removemos el parámetro e
   if (!selectedFile || loading) return;
   
   setLoading(true);
@@ -541,7 +540,6 @@ const handleSubmit = async (e) => {
     const formData = new FormData();
     formData.append('image', selectedFile);
 
-    // Mostrar estado de subida
     setCurrentStatus('uploading');
     console.log('Subiendo imagen al servidor...');
     setUploadProgress(30);
@@ -549,41 +547,24 @@ const handleSubmit = async (e) => {
     const apiUrl = `${environment.apiUrl}/detect`;
     console.log('URL del servidor:', apiUrl);
 
-    // Iniciar el temporizador para simular el progreso del análisis
-    let progressInterval;
-    const startProgressSimulation = () => {
-      let progress = 0;
-      progressInterval = setInterval(() => {
-        progress += 5;
-        if (progress <= 90) { // Solo llega hasta 90% para evitar falsos positivos
-          setAnalysisProgress(progress);
-        }
-      }, 3000); // Actualiza cada 3 segundos
-    };
-
-    const response = await fetchWithRetry(apiUrl, {
+    const response = await fetch(apiUrl, { // Simplificamos la llamada fetch
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`
       },
-      body: formData
+      body: formData,
+      credentials: 'include',
+      mode: 'cors'
     });
 
-    setUploadProgress(100);
-    setCurrentStatus('analyzing');
-    console.log('Imagen subida exitosamente, iniciando análisis...');
-    
-    // Iniciar simulación de progreso para el análisis
-    startProgressSimulation();
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
     const data = await response.json();
     console.log('Respuesta del servidor recibida:', data);
 
-    // Limpiar el intervalo cuando se recibe la respuesta
-    if (progressInterval) clearInterval(progressInterval);
-
     if (data.success) {
-      setAnalysisProgress(100);
       setCurrentStatus('complete');
       setResult(data);
       setIsResultModalOpen(true);
@@ -597,15 +578,8 @@ const handleSubmit = async (e) => {
     setCurrentStatus('error');
     
     let errorMessage = 'Error de conexión. Por favor, intente nuevamente';
-    
-    if (err.message.includes('Failed to fetch')) {
-      errorMessage = 'No se pudo conectar con el servidor. El servidor gratuito puede estar iniciándose (esto puede tomar hasta 50 segundos). Por favor, espere un momento y vuelva a intentar.';
-    } else if (err.message.includes('NetworkError')) {
-      errorMessage = 'Error de red. Por favor, verifique su conexión.';
-    } else if (err.message.includes('401')) {
+    if (err.message.includes('401')) {
       errorMessage = 'Sesión expirada. Por favor, inicie sesión nuevamente.';
-    } else if (err.message.includes('413')) {
-      errorMessage = 'La imagen es demasiado grande. Por favor, intente con una imagen más pequeña.';
     }
     
     setError(errorMessage);
@@ -742,32 +716,27 @@ return (
 
               {/* Action Buttons */}
               <div className="flex gap-4">
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (!loading) {
-                      handleSubmit(e);
-                    }
-                  }}
-                  disabled={!selectedFile || loading}
-                  className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-                    !selectedFile || loading
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg hover:shadow-xl focus:ring-green-500'
-                  }`}
-                >
-                  {loading ? (
-                    <div className="flex items-center justify-center">
-                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                      <span>Procesando...</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center">
-                      <CheckCircle className="w-5 h-5 mr-2" />
-                      <span>Analizar Imagen</span>
-                    </div>
-                  )}
-                </button>
+              <button
+  onClick={handleSubmit} // Simplificamos el onClick
+  disabled={!selectedFile || loading}
+  className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+    !selectedFile || loading
+      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+      : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg hover:shadow-xl focus:ring-green-500'
+  }`}
+>
+  {loading ? (
+    <div className="flex items-center justify-center">
+      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+      <span>Procesando...</span>
+    </div>
+  ) : (
+    <div className="flex items-center justify-center">
+      <CheckCircle className="w-5 h-5 mr-2" />
+      <span>Analizar Imagen</span>
+    </div>
+  )}
+</button>
                 
                 {(preview || result) && (
                   <button
