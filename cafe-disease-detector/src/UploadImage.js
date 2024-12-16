@@ -517,14 +517,15 @@ const handleFileSelect = async (event) => {
 */
 
 const handleSubmit = async () => {
-  if (!selectedFile || loading) return;
-  
-  setLoading(true);
-  setError(null);
-  setCurrentStatus('starting');
-  setUploadProgress(0);
+  if (!selectedFile || loading) {
+    return;
+  }
 
   try {
+    setLoading(true);
+    setError(null);
+    console.log('Intentando conexión al servidor...');
+
     const currentUser = auth.currentUser;
     if (!currentUser) {
       throw new Error('Usuario no autenticado');
@@ -534,59 +535,54 @@ const handleSubmit = async () => {
     const formData = new FormData();
     formData.append('image', selectedFile);
 
-    setCurrentStatus('uploading');
-    console.log('Intentando conexión al servidor...');
+    // URL del servidor
+    const apiUrl = 'https://cafe-disease-detector.onrender.com/detect';
+    console.log('Conectando a:', apiUrl);
 
-    const response = await fetch(`${environment.apiUrl}/detect`, {
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
+        // Removemos el header Content-Type para que el navegador lo establezca automáticamente con el boundary correcto
       },
       body: formData,
-      credentials: 'include',
-      mode: 'cors'
+      mode: 'cors', // Aseguramos que estamos en modo CORS
+      credentials: 'include', // Incluimos las credenciales
+      cache: 'no-cache' // Evitamos problemas de caché
     });
 
-    // Manejo específico de errores HTTP
     if (!response.ok) {
-      if (response.status === 500) {
-        throw new Error('Error interno del servidor. El servidor puede estar iniciándose, por favor espere unos minutos y vuelva a intentar.');
-      } else if (response.status === 413) {
-        throw new Error('La imagen es demasiado grande. Por favor, intente con una imagen más pequeña.');
-      } else {
-        const errorText = await response.text();
-        throw new Error(`Error del servidor: ${response.status} - ${errorText}`);
-      }
+      const errorBody = await response.text();
+      console.error('Error respuesta servidor:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorBody
+      });
+      throw new Error(`Error del servidor: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('Respuesta recibida:', data);
-
+    console.log('Respuesta del servidor:', data);
+    
     if (data.success) {
       setResult(data);
       setIsResultModalOpen(true);
-      setCurrentStatus('complete');
     } else {
       throw new Error(data.error || 'Error en el procesamiento de la imagen');
     }
 
   } catch (err) {
-    console.error('Error en el análisis:', err);
-    let errorMessage;
-
-    if (err.message.includes('500')) {
-      errorMessage = 'El servidor está ocupado o iniciándose. Por favor espere unos minutos y vuelva a intentar.';
-    } else if (err.message.includes('413')) {
-      errorMessage = 'La imagen es demasiado grande. Intente con una imagen más pequeña.';
-    } else if (err.message.includes('401')) {
-      errorMessage = 'Sesión expirada. Por favor, inicie sesión nuevamente.';
-    } else {
-      errorMessage = 'Error de conexión. Por favor, intente nuevamente en unos momentos.';
+    console.error('Error detallado:', err);
+    
+    let errorMessage = 'Error de conexión. Por favor, intente nuevamente';
+    
+    if (err.message.includes('NetworkError') || err.message.includes('Failed to fetch')) {
+      errorMessage = 'No se puede conectar al servidor. Por favor, verifique su conexión a internet y que el servidor esté activo.';
+    } else if (err.message.includes('cors')) {
+      errorMessage = 'Error de acceso al servidor. Por favor, contacte al administrador.';
     }
     
     setError(errorMessage);
-    setCurrentStatus('error');
   } finally {
     setLoading(false);
   }
