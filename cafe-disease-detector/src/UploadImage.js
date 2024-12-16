@@ -36,16 +36,54 @@ const ImagePreview = ({ src, alt, className }) => {
 };
 
 // Componente para mostrar el estado del análisis
-const AnalysisStatus = ({ loading, error, result }) => {
-  if (loading) {
-    return (
-      <div className="absolute top-4 right-4 bg-white py-2 px-4 rounded-full shadow-lg flex items-center space-x-2 animate-pulse">
+const AnalysisStatus = ({ loading, currentStatus, uploadProgress, analysisProgress }) => {
+  if (!loading) return null;
+
+  const getStatusMessage = () => {
+    switch (currentStatus) {
+      case 'starting':
+        return 'Preparando imagen...';
+      case 'uploading':
+        return `Subiendo imagen... ${uploadProgress}%`;
+      case 'analyzing':
+        return `Analizando imagen... ${analysisProgress}%
+                \n(El servidor gratuito puede tardar hasta 2 minutos)`;
+      case 'complete':
+        return 'Análisis completado';
+      case 'error':
+        return 'Error en el proceso';
+      default:
+        return 'Procesando...';
+    }
+  };
+
+  return (
+    <div className="fixed top-4 right-4 bg-white py-2 px-4 rounded-lg shadow-lg z-50">
+      <div className="flex items-center space-x-2">
         <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
-        <span className="text-sm font-medium text-gray-600">Analizando...</span>
+        <div className="flex flex-col">
+          <span className="text-sm font-medium text-gray-600">
+            {getStatusMessage()}
+          </span>
+          {(currentStatus === 'uploading' || currentStatus === 'analyzing') && (
+            <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+              <div 
+                className="bg-blue-500 rounded-full h-1.5 transition-all duration-500"
+                style={{ 
+                  width: `${currentStatus === 'uploading' ? uploadProgress : analysisProgress}%` 
+                }}
+              />
+            </div>
+          )}
+          {currentStatus === 'analyzing' && (
+            <span className="text-xs text-gray-500 mt-1">
+              Servidor gratuito de Render - puede tomar tiempo
+            </span>
+          )}
+        </div>
       </div>
-    );
-  }
-  return null;
+    </div>
+  );
 };
 
 // Modal de Resultados
@@ -484,10 +522,12 @@ const handleSubmit = async (e) => {
   
   setLoading(true);
   setError(null);
-  setStatus('starting');
-  setProgress(0);
+  setCurrentStatus('starting');
+  setUploadProgress(0);
+  setAnalysisProgress(0);
 
   try {
+    console.log('Iniciando proceso de análisis...');
     const currentUser = auth.currentUser;
     if (!currentUser) {
       throw new Error('Usuario no autenticado');
@@ -501,11 +541,25 @@ const handleSubmit = async (e) => {
     const formData = new FormData();
     formData.append('image', selectedFile);
 
-    setStatus('uploading');
-    setProgress(30);
+    // Mostrar estado de subida
+    setCurrentStatus('uploading');
+    console.log('Subiendo imagen al servidor...');
+    setUploadProgress(30);
 
     const apiUrl = `${environment.apiUrl}/detect`;
-    console.log('Intentando conexión a:', apiUrl);
+    console.log('URL del servidor:', apiUrl);
+
+    // Iniciar el temporizador para simular el progreso del análisis
+    let progressInterval;
+    const startProgressSimulation = () => {
+      let progress = 0;
+      progressInterval = setInterval(() => {
+        progress += 5;
+        if (progress <= 90) { // Solo llega hasta 90% para evitar falsos positivos
+          setAnalysisProgress(progress);
+        }
+      }, 3000); // Actualiza cada 3 segundos
+    };
 
     const response = await fetchWithRetry(apiUrl, {
       method: 'POST',
@@ -515,25 +569,37 @@ const handleSubmit = async (e) => {
       body: formData
     });
 
+    setUploadProgress(100);
+    setCurrentStatus('analyzing');
+    console.log('Imagen subida exitosamente, iniciando análisis...');
+    
+    // Iniciar simulación de progreso para el análisis
+    startProgressSimulation();
+
     const data = await response.json();
-    console.log('Respuesta recibida:', data);
+    console.log('Respuesta del servidor recibida:', data);
+
+    // Limpiar el intervalo cuando se recibe la respuesta
+    if (progressInterval) clearInterval(progressInterval);
 
     if (data.success) {
+      setAnalysisProgress(100);
+      setCurrentStatus('complete');
       setResult(data);
       setIsResultModalOpen(true);
-      setProgress(100);
-      setStatus('complete');
+      console.log('Análisis completado exitosamente');
     } else {
       throw new Error(data.error || 'Error en el procesamiento de la imagen');
     }
 
   } catch (err) {
     console.error('Error detallado:', err);
+    setCurrentStatus('error');
     
     let errorMessage = 'Error de conexión. Por favor, intente nuevamente';
     
     if (err.message.includes('Failed to fetch')) {
-      errorMessage = 'No se pudo conectar con el servidor. Por favor, verifique su conexión a internet.';
+      errorMessage = 'No se pudo conectar con el servidor. El servidor gratuito puede estar iniciándose (esto puede tomar hasta 50 segundos). Por favor, espere un momento y vuelva a intentar.';
     } else if (err.message.includes('NetworkError')) {
       errorMessage = 'Error de red. Por favor, verifique su conexión.';
     } else if (err.message.includes('401')) {
@@ -543,7 +609,6 @@ const handleSubmit = async (e) => {
     }
     
     setError(errorMessage);
-    setStatus('error');
   } finally {
     setLoading(false);
   }
@@ -601,159 +666,169 @@ const LoadingMessage = () => (
     const fileInput = document.getElementById('file-upload');
     if (fileInput) fileInput.value = '';
   };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50/50 to-blue-50 p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 text-white mb-4 shadow-lg">
-            <Leaf className="w-8 h-8" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Detector de Enfermedades en Café</h1>
-          <p className="text-gray-600 max-w-2xl mx-auto">
-            Sistema avanzado de detección de enfermedades en plantas de café mediante inteligencia artificial
-          </p>
+// Añade estos estados en tu componente UploadImage
+const [uploadProgress, setUploadProgress] = useState(0);
+const [analysisProgress, setAnalysisProgress] = useState(0);
+const [currentStatus, setCurrentStatus] = useState('idle'); // idle, uploading, analyzing, complete, error
+return (
+  <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50/50 to-blue-50 p-4 md:p-8">
+    <div className="max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="text-center mb-8">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 text-white mb-4 shadow-lg">
+          <Leaf className="w-8 h-8" />
         </div>
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">Detector de Enfermedades en Café</h1>
+        <p className="text-gray-600 max-w-2xl mx-auto">
+          Sistema avanzado de detección de enfermedades en plantas de café mediante inteligencia artificial
+        </p>
+      </div>
 
-        {/* Main Container */}
-        <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
-            {/* Left Panel - Upload */}
-            <div className="relative p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-white border-b lg:border-b-0 lg:border-r border-gray-100">
-              <div className="space-y-6">
-                {/* Upload Area */}
-                <div className="relative">
-                  <input
-                    type="file"
-                    onChange={handleFileSelect}
-                    accept="image/*"
-                    className="hidden"
-                    id="file-upload"
-                  />
-                  
-                  {!preview ? (
+      {/* Main Container */}
+      <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
+          {/* Left Panel - Upload */}
+          <div className="relative p-6 lg:p-8 bg-gradient-to-br from-gray-50 to-white border-b lg:border-b-0 lg:border-r border-gray-100">
+            <div className="space-y-6">
+              {/* Upload Area */}
+              <div className="relative">
+                <input
+                  type="file"
+                  onChange={handleFileSelect}
+                  accept="image/*"
+                  className="hidden"
+                  id="file-upload"
+                />
+                
+                {!preview ? (
+                  <label 
+                    htmlFor="file-upload" 
+                    className="block aspect-square rounded-2xl border-2 border-dashed border-gray-300 hover:border-green-500 transition-colors duration-300 cursor-pointer bg-gray-50 hover:bg-gray-50/80"
+                  >
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <Camera className="w-16 h-16 text-gray-400" />
+                      <p className="mt-4 text-sm text-gray-500 text-center">
+                        <span className="font-medium text-green-600 hover:text-green-500">
+                          Cargar imagen
+                        </span>
+                        {' '}o arrastrar y soltar
+                      </p>
+                      <p className="mt-2 text-xs text-gray-400">
+                        PNG, JPG hasta 10MB
+                      </p>
+                    </div>
+                  </label>
+                ) : (
+                  <div className="relative group">
+                    <div className="aspect-square">
+                      <ImagePreview
+                        src={preview}
+                        alt="Preview"
+                        className="rounded-lg"
+                      />
+                    </div>
                     <label 
-                      htmlFor="file-upload" 
-                      className="block aspect-square rounded-2xl border-2 border-dashed border-gray-300 hover:border-green-500 transition-colors duration-300 cursor-pointer bg-gray-50 hover:bg-gray-50/80"
+                      htmlFor="file-upload"
+                      className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-all duration-300 rounded-2xl"
                     >
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <Camera className="w-16 h-16 text-gray-400" />
-                        <p className="mt-4 text-sm text-gray-500 text-center">
-                          <span className="font-medium text-green-600 hover:text-green-500">
-                            Cargar imagen
-                          </span>
-                          {' '}o arrastrar y soltar
-                        </p>
-                        <p className="mt-2 text-xs text-gray-400">
-                          PNG, JPG hasta 10MB
-                        </p>
+                      <div className="text-white text-center">
+                        <Upload className="w-8 h-8 mx-auto" />
+                        <span className="mt-2 block">Cambiar imagen</span>
                       </div>
                     </label>
-                  ) : (
-                    <div className="relative group">
-                      <div className="aspect-square">
-                        <ImagePreview
-                          src={preview}
-                          alt="Preview"
-                          className="rounded-lg"
-                        />
-                      </div>
-                      <label 
-                        htmlFor="file-upload"
-                        className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-all duration-300 rounded-2xl"
-                      >
-                        <div className="text-white text-center">
-                          <Upload className="w-8 h-8 mx-auto" />
-                          <span className="mt-2 block">Cambiar imagen</span>
-                        </div>
-                      </label>
-                    </div>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-4">
-                  <button
-                     onClick={(e) => {
-                      e.preventDefault();
-                      if (!loading) {
-                        handleSubmit(e);
-                      }
-                    }}
-                    disabled={!selectedFile || loading}
-                    className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-                      !selectedFile || loading
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg hover:shadow-xl focus:ring-green-500'
-                    }`}
-                  >
-                    {loading ? (
-                      <div className="flex items-center justify-center">
-                        <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                        <span>Procesando...</span>
-                        {loading && <LoadingStatus />}
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center">
-                        <CheckCircle className="w-5 h-5 mr-2" />
-                        <span>Analizar Imagen</span>
-                      </div>
-                    )}
-                  </button>
-                  
-                  {(preview || result) && (
-                    <button
-                      onClick={handleReset}
-                      className="px-4 py-3 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200"
-                    >
-                      <RefreshCw className="w-5 h-5" />
-                    </button>
-                  )}
-                </div>
-
-                {error && (
-                  <div className="rounded-xl p-4 bg-red-50 border border-red-100">
-                    <div className="flex items-center text-red-800">
-                      <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
-                      <p className="text-sm font-medium">{error}</p>
-                    </div>
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Right Panel - Results (simplified) */}
-            <div className="p-6 lg:p-8">
-              <div className="h-full flex items-center justify-center">
-                <div className="text-center text-gray-500">
-                  <Camera className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                  <p>Carga una imagen para ver los resultados del análisis</p>
+              {/* Action Buttons */}
+              <div className="flex gap-4">
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (!loading) {
+                      handleSubmit(e);
+                    }
+                  }}
+                  disabled={!selectedFile || loading}
+                  className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                    !selectedFile || loading
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg hover:shadow-xl focus:ring-green-500'
+                  }`}
+                >
+                  {loading ? (
+                    <div className="flex items-center justify-center">
+                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                      <span>Procesando...</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center">
+                      <CheckCircle className="w-5 h-5 mr-2" />
+                      <span>Analizar Imagen</span>
+                    </div>
+                  )}
+                </button>
+                
+                {(preview || result) && (
+                  <button
+                    onClick={handleReset}
+                    className="px-4 py-3 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200"
+                  >
+                    <RefreshCw className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              {error && (
+                <div className="rounded-xl p-4 bg-red-50 border border-red-100">
+                  <div className="flex items-center text-red-800">
+                    <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
+                    <p className="text-sm font-medium">{error}</p>
+                  </div>
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Panel - Results */}
+          <div className="p-6 lg:p-8">
+            <div className="h-full flex items-center justify-center">
+              <div className="text-center text-gray-500">
+                <Camera className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                <p>Carga una imagen para ver los resultados del análisis</p>
               </div>
             </div>
           </div>
         </div>
-
-        {/* Footer */}
-        <div className="mt-8 text-center text-sm text-gray-500">
-          Desarrollado con tecnología de detección avanzada para identificar enfermedades en plantas de café
-        </div>
       </div>
 
-      <AnalysisStatus loading={loading} error={error} result={result} />
-
-      {/* Modal de Resultados */}
-      <ResultModal 
-        isOpen={isResultModalOpen && result && result.success}
-        onClose={() => {
-          setIsResultModalOpen(false);
-          handleReset();
-        }}
-        result={result}
-      />
+      {/* Footer */}
+      <div className="mt-8 text-center text-sm text-gray-500">
+        Desarrollado con tecnología de detección avanzada para identificar enfermedades en plantas de café
+      </div>
     </div>
-  );
+
+    {/* Estado del Análisis */}
+    <AnalysisStatus 
+      loading={loading}
+      currentStatus={currentStatus}
+      uploadProgress={uploadProgress}
+      analysisProgress={analysisProgress}
+    />
+
+    {/* Modal de Resultados */}
+    <ResultModal 
+      isOpen={isResultModalOpen && result && result.success}
+      onClose={() => {
+        setIsResultModalOpen(false);
+        handleReset();
+      }}
+      result={result}
+    />
+  </div>
+);
 };
+
+
 
 export default UploadImage;
