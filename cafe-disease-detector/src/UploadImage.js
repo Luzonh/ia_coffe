@@ -273,27 +273,39 @@ const UploadImage = ({ user }) => {
   const [retryCount, setRetryCount] = useState(0);
 
   const fetchWithRetry = async (url, options, maxRetries = 3) => {
+    let lastError;
+    
     for (let i = 0; i < maxRetries; i++) {
       try {
-        setStatus('attempting');
-        setProgress((i + 1) * 30);
-        
-        const response = await fetch(url, options);
-        if (response.ok) return response;
-        
-        if (response.status === 429) { // Too Many Requests
-          throw new Error('Servidor ocupado. Reintentando...');
+        const response = await fetch(url, {
+          ...options,
+          credentials: 'include',
+          mode: 'cors',
+          headers: {
+            ...options.headers,
+            'Accept': 'application/json',
+          }
+        });
+  
+        if (!response.ok) {
+          const errorBody = await response.text();
+          throw new Error(`HTTP error! status: ${response.status}, body: ${errorBody}`);
         }
+  
+        return response;
+  
       } catch (error) {
-        setRetryCount(i + 1);
-        if (i === maxRetries - 1) throw error;
-        
-        // Espera incremental entre reintentos
-        const waitTime = 5000 * (i + 1);
-        setStatus('waiting');
-        await new Promise(resolve => setTimeout(resolve, waitTime));
+        lastError = error;
+        console.error(`Intento ${i + 1} fallido:`, error);
+  
+        if (i < maxRetries - 1) {
+          const waitTime = Math.min(1000 * Math.pow(2, i), 10000);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
       }
     }
+  
+    throw lastError;
   };
 
   // Función mejorada para optimizar imágenes
@@ -466,8 +478,9 @@ const handleFileSelect = async (event) => {
   };
 */
 
-const handleSubmit = async () => {
-  if (!selectedFile) return;
+const handleSubmit = async (e) => {
+  if (e) e.preventDefault();
+  if (!selectedFile || loading) return;
   
   setLoading(true);
   setError(null);
@@ -480,37 +493,31 @@ const handleSubmit = async () => {
       throw new Error('Usuario no autenticado');
     }
 
-    // Verificar el tamaño del archivo antes de enviarlo
-    if (selectedFile.size > 5 * 1024 * 1024) { // 5MB
-      throw new Error('La imagen es demasiado grande. El tamaño máximo es 5MB');
+    const token = await currentUser.getIdToken();
+    if (!token) {
+      throw new Error('No se pudo obtener el token de autenticación');
     }
 
-    const token = await currentUser.getIdToken();
     const formData = new FormData();
     formData.append('image', selectedFile);
 
     setStatus('uploading');
     setProgress(30);
 
-    // Implementar retry con backoff exponencial
-    const response = await fetchWithRetry(`${environment.apiUrl}/detect`, {
+    const apiUrl = `${environment.apiUrl}/detect`;
+    console.log('Intentando conexión a:', apiUrl);
+
+    const response = await fetchWithRetry(apiUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`
       },
-      body: formData,
-      credentials: 'include',
-      mode: 'cors'
+      body: formData
     });
 
-    // Verificar el tipo de respuesta
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      throw new Error('Formato de respuesta no válido');
-    }
-
     const data = await response.json();
-    
+    console.log('Respuesta recibida:', data);
+
     if (data.success) {
       setResult(data);
       setIsResultModalOpen(true);
@@ -521,23 +528,24 @@ const handleSubmit = async () => {
     }
 
   } catch (err) {
-    console.error('Error en el análisis:', err);
+    console.error('Error detallado:', err);
     
-    // Mensajes de error más específicos
     let errorMessage = 'Error de conexión. Por favor, intente nuevamente';
-    if (err.message.includes('demasiado grande')) {
-      errorMessage = err.message;
-    } else if (err.message.includes('no válido')) {
-      errorMessage = 'El servidor no respondió en el formato esperado';
-    } else if (err.message.includes('no autenticado')) {
-      errorMessage = 'Por favor, inicie sesión nuevamente';
+    
+    if (err.message.includes('Failed to fetch')) {
+      errorMessage = 'No se pudo conectar con el servidor. Por favor, verifique su conexión a internet.';
+    } else if (err.message.includes('NetworkError')) {
+      errorMessage = 'Error de red. Por favor, verifique su conexión.';
+    } else if (err.message.includes('401')) {
+      errorMessage = 'Sesión expirada. Por favor, inicie sesión nuevamente.';
+    } else if (err.message.includes('413')) {
+      errorMessage = 'La imagen es demasiado grande. Por favor, intente con una imagen más pequeña.';
     }
     
     setError(errorMessage);
     setStatus('error');
   } finally {
     setLoading(false);
-    setProgress(0);
   }
 };
 
@@ -667,7 +675,12 @@ const LoadingMessage = () => (
                 {/* Action Buttons */}
                 <div className="flex gap-4">
                   <button
-                    onClick={handleSubmit}
+                     onClick={(e) => {
+                      e.preventDefault();
+                      if (!loading) {
+                        handleSubmit(e);
+                      }
+                    }}
                     disabled={!selectedFile || loading}
                     className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
                       !selectedFile || loading
