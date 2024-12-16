@@ -296,12 +296,16 @@ const UploadImage = ({ user }) => {
     }
   };
 
-  const optimizeImage = async (file) => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
+  // Función mejorada para optimizar imágenes
+const optimizeImage = async (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Error al leer el archivo'));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Error al cargar la imagen'));
+      img.onload = () => {
+        try {
           const canvas = document.createElement('canvas');
           const MAX_WIDTH = 800;
           const MAX_HEIGHT = 800;
@@ -324,21 +328,31 @@ const UploadImage = ({ user }) => {
           canvas.height = height;
           const ctx = canvas.getContext('2d');
   
-          // Dibujar fondo blanco para mejorar calidad
+          // Asegurarse de que el contexto se creó correctamente
+          if (!ctx) {
+            reject(new Error('No se pudo crear el contexto del canvas'));
+            return;
+          }
+
+          // Dibujar fondo blanco
           ctx.fillStyle = '#FFFFFF';
           ctx.fillRect(0, 0, width, height);
           
           // Dibujar imagen
           ctx.drawImage(img, 0, 0, width, height);
           
-          // Calidad inicial
+          // Comprimir con calidad adaptativa
           let quality = 0.7;
-          const maxSize = 5 * 1024 * 1024; // 5MB máximo para Render Free
+          const maxSize = 4.5 * 1024 * 1024; // 4.5MB para dar margen
           
           const compressAndCheck = (q) => {
             canvas.toBlob((blob) => {
+              if (!blob) {
+                reject(new Error('Error al comprimir la imagen'));
+                return;
+              }
+
               if (blob.size > maxSize && q > 0.1) {
-                // Si la imagen sigue siendo muy grande, reducir calidad
                 quality = q - 0.1;
                 compressAndCheck(quality);
               } else {
@@ -351,14 +365,17 @@ const UploadImage = ({ user }) => {
             }, 'image/jpeg', q);
           };
   
-          // Iniciar proceso de compresión
           compressAndCheck(quality);
-        };
-        img.src = e.target.result;
+        } catch (err) {
+          reject(new Error('Error al procesar la imagen'));
+        }
       };
-      reader.readAsDataURL(file);
-    });
-  };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
 
   // Función para manejar la selección de archivos
 const handleFileSelect = async (event) => {
@@ -463,6 +480,11 @@ const handleSubmit = async () => {
       throw new Error('Usuario no autenticado');
     }
 
+    // Verificar el tamaño del archivo antes de enviarlo
+    if (selectedFile.size > 5 * 1024 * 1024) { // 5MB
+      throw new Error('La imagen es demasiado grande. El tamaño máximo es 5MB');
+    }
+
     const token = await currentUser.getIdToken();
     const formData = new FormData();
     formData.append('image', selectedFile);
@@ -470,7 +492,8 @@ const handleSubmit = async () => {
     setStatus('uploading');
     setProgress(30);
 
-    const response = await fetch(`${environment.apiUrl}/detect`, {
+    // Implementar retry con backoff exponencial
+    const response = await fetchWithRetry(`${environment.apiUrl}/detect`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -480,9 +503,10 @@ const handleSubmit = async () => {
       mode: 'cors'
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Error en el servidor');
+    // Verificar el tipo de respuesta
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      throw new Error('Formato de respuesta no válido');
     }
 
     const data = await response.json();
@@ -498,10 +522,22 @@ const handleSubmit = async () => {
 
   } catch (err) {
     console.error('Error en el análisis:', err);
-    setError('Error de conexión. Por favor, intente nuevamente');
+    
+    // Mensajes de error más específicos
+    let errorMessage = 'Error de conexión. Por favor, intente nuevamente';
+    if (err.message.includes('demasiado grande')) {
+      errorMessage = err.message;
+    } else if (err.message.includes('no válido')) {
+      errorMessage = 'El servidor no respondió en el formato esperado';
+    } else if (err.message.includes('no autenticado')) {
+      errorMessage = 'Por favor, inicie sesión nuevamente';
+    }
+    
+    setError(errorMessage);
     setStatus('error');
   } finally {
     setLoading(false);
+    setProgress(0);
   }
 };
 
